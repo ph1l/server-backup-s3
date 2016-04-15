@@ -1,0 +1,8 @@
+# This config is sourced from the backup script, so it must be valid bash!
+
+AWS_ACCESS_KEY_ID="AAAAAAAAAAAAAAAAAAAA"
+AWS_SECRET_ACCESS_KEY="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+
+BACKUP_BUCKET="s3://server-backup.example.com"
+ENCRYPT_TO="CE4A0BF21E1C237DD8C400FAA39487B22697143F"
+
