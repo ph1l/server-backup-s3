@@ -1,0 +1,110 @@
+#!/bin/bash
+
+#    Copyright 2016 Philip J Freeman <elektron@halo.nu>
+
+#    This program is free software: you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation, either version 3 of the License, or
+#    (at your option) any later version.
+#
+#    This program is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+set -euo pipefail
+IFS=$'\n\t'
+
+
+                                        # Config Variables:
+                                        ###################
+
+                                        # NOTE: override the defaults here
+                                        # by adding definitions to a config
+                                        # file.
+
+#AWS_ACCESS_KEY_ID                      # AWS Credentials, not set to allow
+#AWS_SECRET_ACCESS_KEY                  #   inheritance from environment
+
+BACKUP_LOCATION=s3://bkt.example.org    # s3 bucket to write backups to
+                                        #   (e.g. s3://bucket_name[/directory])
+
+ENCRYPT_TO=2697143F                     # space separated list of key ids to
+                                        #   encrypt backups to
+
+#VG_NAME=""                             # LVM Volume Group - no default set
+                                        # here to allow override from env
+
+#LV_NAME=""                             # LVM Logical Volume - no default set
+                                        # here to allow override from env
+
+
+LEVEL_LIMIT=3                           # How many incrementals to take before
+                                        #   doing another full backup
+
+                                        # Less Common Variables:
+                                        ########################
+
+HOST=$(hostname -f)                     # hostname used for naming of backups
+
+DATE=$(date +%Y%m%d-%H%M%S.%N-%Z)
+
+source @@LIB_DIR@@/libbackup.bash
+source @@LIB_DIR@@/libbackup-lvm.bash
+
+if [ -z "${1}" ]; then
+  echo "Usage: ${0} <CONFIG>"
+  exit 2
+fi
+
+source ${1}
+
+# Setup Environment
+
+TMPDIR=/tmp/lvm-snapshot-backup-s3
+MOUNTPOINT=${TMPDIR}/${LV_NAME}
+
+
+## Setup Required Directories
+
+if [ ! -d ${MOUNTPOINT} ]; then
+    mkdir -p ${MOUNTPOINT}
+    chmod 700 ${MOUNTPOINT}
+fi
+
+## Make a Snapshot
+
+SNAP_LV_NAME=$(lv_make_snap "${VG_NAME}" "${LV_NAME}")
+
+SNAP_DEV=/dev/${VG_NAME}/${SNAP_LV_NAME}
+
+#mount it
+if ! mount -o ro ${SNAP_DEV} ${MOUNTPOINT}; then
+    log 0 "ERROR: couldn't mount ${SNAP_DEV} on ${MOUNTPOINT}"
+    lv_remove "${VG_NAME}" "${SNAP_LV_NAME}"
+    exit 1
+fi
+
+# Do The Backup
+BACKUP_FROM="${MOUNTPOINT}"
+LEVEL_LIMIT=3
+DESCRIPTION=$(get_backup_description "${BACKUP_FROM}")
+LEVEL=$(get_curlevel "${BACKUP_FROM}")
+DATE=$(date +%Y%m%d-%H%M%S)
+S3_URL="${BACKUP_LOCATION}/${DESCRIPTION}/${DATE}.${LEVEL}.tar.gpg"
+
+do_incremental_backup "${BACKUP_FROM}" "${LEVEL_LIMIT}" | \
+    encrypt_stream "${ENCRYPT_TO}" | \
+    upload_stream_to_s3 "${S3_URL}"
+
+#unmount it
+umount ${SNAP_DEV}
+
+#remove the snapshot
+lv_remove "${VG_NAME}" "${SNAP_LV_NAME}"
+
+log 0 "Backup Completed"
+exit 0

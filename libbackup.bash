@@ -1,9 +1,24 @@
 #!/bin/bash
 
+#    Copyright 2016 Philip J Freeman <elektron@halo.nu>
+
+#    This program is free software: you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation, either version 3 of the License, or
+#    (at your option) any later version.
+#
+#    This program is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
 set -euo pipefail
 IFS=$'\t\n'
 
-BACKUP_CACHE_DIR=/var/cache/backup
+BACKUP_CACHE_DIR=/var/cache/libbashbackup
 
 VERBOSE=0
 
@@ -131,11 +146,11 @@ function upload_stream_to_s3()
 #
 #BACKUP_FROM="/tmp"
 #LEVEL_LIMIT=3
-#ENCRYPT_TO=$'95C7423D\tDE23B6D9'
+#ENCRYPT_TO=$'CE4A0BF21E1C237DD8C400FAA39487B22697143F\t0B0A72DD7A25C9D61DFD20DF115D31AF95C7423D'
 #DESCRIPTION=$(get_backup_description "${BACKUP_FROM}")
 #LEVEL=$(get_curlevel "${BACKUP_FROM}")
 #DATE=$(date +%Y%m%d-%H%M%S)
-#S3_BUCKET="backups.endlessm.com"
+#S3_BUCKET="backups.example.com"
 #S3_URL="s3://${S3_BUCKET}/${DESCRIPTION}/${DATE}.${LEVEL}.tar.gpg"
 #
 #do_incremental_backup "${BACKUP_FROM}" "${LEVEL_LIMIT}" | \
