@@ -34,7 +34,7 @@ function lv_make_snap()
 {
     local vg_name=${1}
     local lv_name=${2}
-    local alloc_percent=10
+    local alloc_percent=100
     local lv_size=$(lv_size ${vg_name} ${lv_name})
     local snap_alloc=$((
             ((((${lv_size} * ${alloc_percent}) / 100) /512) *512)
