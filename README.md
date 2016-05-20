@@ -7,7 +7,7 @@ This is a bash backup script to do encrypted incremental tar backups to s3
 ## Dependencies
 
 * Linux
-* Python (for s3cmd)
+* s3cmd (>=1.5.0)
 
 ## Usage
 
@@ -15,6 +15,11 @@ This is a bash backup script to do encrypted incremental tar backups to s3
 
 See the beginning of server-backup-s3 script for detailed configuration
 description.
+
+    # ./lvm-snapshot-backup-s3 <CONFIG_FILE>
+
+See the beginning of lvm-snapshot-backup-s3 script for detailed
+configuration description.
 
 ## s3 Permissions
 
@@ -31,7 +36,7 @@ s3:PutObject in the backup bucket. Example IAM user inline policy:
                     "s3:PutObject"
                 ],
                 "Resource": [
-                    "arn:aws:s3:::server-backup.example.com/*"
+                    "arn:aws:s3:::backup.example.com/*"
                 ]
             }
         ]

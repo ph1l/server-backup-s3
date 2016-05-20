@@ -1,0 +1,90 @@
+#!/bin/bash
+
+#    Copyright 2016 Philip J Freeman <elektron@halo.nu>
+
+#    This program is free software: you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation, either version 3 of the License, or
+#    (at your option) any later version.
+#
+#    This program is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+set -euo pipefail
+IFS=$'\t\n'
+
+
+					# Config Variables:
+					###################
+
+					# NOTE: override the defaults here
+					# by adding definitions to a config
+					# file.
+
+#AWS_ACCESS_KEY_ID			# AWS Credentials, not set to allow
+#AWS_SECRET_ACCESS_KEY			#   inheritance from environment
+
+BACKUP_LOCATION=s3://bkt.example.org	# s3 bucket to write backups to
+					#   (e.g. s3://bucket_name[/directory])
+
+ENCRYPT_TO=2697143F			# space separated list of key ids to
+					#   encrypt backups to
+
+FILESYSTEMS=""				# mountpoints to backup, if blank
+					#   we use /etc/fstab to guess.
+
+LEVEL_LIMIT=3				# How many incrementals to take before
+					#   doing another full backup
+
+					# Less Common Variables:
+					########################
+
+HOST=$(hostname -f)			# hostname used for naming of backups
+
+DATE=$(date +%Y%m%d-%H%M%S.%N-%Z)
+
+source @@LIB_DIR@@/libbackup.bash
+
+if [ -z "${1}" ]; then
+  echo "Usage: ${0} <CONFIG>"
+  exit 2
+fi
+
+source ${1}
+
+export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
+
+if [ -z "${FILESYSTEMS}" ]; then
+	FILESYSTEMS=$(cat /etc/fstab | grep -v ^# | awk '{ if (match($2,/^\//)){print $2;}}')
+fi
+
+# TODO: move s3cmd version checking and workarounds to libbackup.bash
+#
+# #S3CMD_VERSION=1.5.2
+# #if [ ! -x ${BAK_DIR}/s3cmd-${S3CMD_VERSION}/s3cmd ]; then
+# #  wget -qO ${BAK_DIR}/s3cmd-v${S3CMD_VERSION}.zip \
+# #    "https://github.com/s3tools/s3cmd/archive/v${S3CMD_VERSION}.zip"
+# #  (cd ${BAK_DIR}; unzip -q s3cmd-v${S3CMD_VERSION}.zip)
+# #fi
+
+# Add cachedir tags /var/cache
+if [ ! -e /var/cache/CACHEDIR.TAG ]; then
+	echo "Signature: 8a477f597d28d172789f06886806bc55" > ${DIR}/CACHEDIR.TAG
+fi
+
+for FS in ${FILESYSTEMS}; do
+
+	DESCRIPTION=$(get_backup_description "${FS}")
+	LEVEL=$(get_curlevel "${FS}")
+	# Do The Backup(s)
+	S3_URL="${BACKUP_LOCATION}/${DESCRIPTION}/${DATE}.${LEVEL}.tar.gpg"
+	do_incremental_backup "${FS}" "${LEVEL_LIMIT}" | \
+		encrypt_stream "${ENCRYPT_TO}" | \
+		upload_stream_to_s3 "${S3_URL}"
+
+done
