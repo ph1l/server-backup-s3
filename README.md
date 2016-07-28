@@ -2,19 +2,25 @@
 
 Author: `"Philip Freeman" <elektron@halo.nu>`
 
-This is a bash backup script to do encrypted incremental tar backups to s3
+This is a python backup script to do encrypted incremental tar backups to s3
 
 ## Dependencies
 
-* Linux
-* Python (for s3cmd)
+* tar
+* gnupg
+* python
+* python boto
+
+This utility is tested on Debian Wheeezy, Jessie, and Stretch with the default
+`python-boto` package.
 
 ## Usage
 
-    # ./server-backup-s3 <CONFIG_FILE>
+    # export AWS_ACCESS_KEY_ID=AAAAAAA
+    # export AWS_SECRET_ACCESS_KEY=xxxxxxxxxxxxxxxxxxxxx
+    # server-backup-s3 -e -r KEY_ID -B S3_BUCKET -R AWS_REGION
 
-See the beginning of server-backup-s3 script for detailed configuration
-description.
+See the --help for more info
 
 ## s3 Permissions
 
