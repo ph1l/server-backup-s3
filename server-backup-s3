@@ -1,136 +1,418 @@
-#!/bin/bash -e
+#!/usr/bin/python
+# vim:et:ts=4:sts=4:ai
+"""
+    s3-backup
 
-#    Copyright 2016 Philip J Freeman <elektron@halo.nu>
+    Copyright 2016 Philip J Freeman <elektron@halo.nu>
 
-#    This program is free software: you can redistribute it and/or modify
-#    it under the terms of the GNU General Public License as published by
-#    the Free Software Foundation, either version 3 of the License, or
-#    (at your option) any later version.
-#
-#    This program is distributed in the hope that it will be useful,
-#    but WITHOUT ANY WARRANTY; without even the implied warranty of
-#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-#    GNU General Public License for more details.
-#
-#    You should have received a copy of the GNU General Public License
-#    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
 
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
 
-					# Config Variables:
-					###################
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-					# NOTE: override the defaults here
-					# by adding definitions to a config
-					# file.
+"""
 
-#AWS_ACCESS_KEY_ID			# AWS Credentials, not set to allow
-#AWS_SECRET_ACCESS_KEY			#   inheritance from environment
+# CHUNK_SIZE
+#   defines the size of multi-part "chunks" we upload to s3
 
-BACKUP_LOCATION=s3://bkt.example.org	# s3 bucket to write backups to
-					#   (e.g. s3://bucket_name[/directory])
+CHUNK_SIZE = 32*1024*1024 # 32MiB
 
-ENCRYPT_TO=2697143F			# space separated list of key ids to
-					#   encrypt backups to
+# DEFAULT_CACHE_DIR
+#   defines where we cache local info about tar's listed-incremental archives
 
-FILESYSTEMS=""				# mountpoints to backup, if blank
-					#   we use /etc/fstab to guess.
+DEFAULT_CACHE_DIR = "/var/cache/backup"
 
-LEVEL_LIMIT=3				# How many incrementals to take before
-					#   doing another full backup
+class BackupFilesystem():
 
-					# Less Common Variables:
-					########################
+    def __get_cur_level(self):
 
-HOST=$(hostname -f)			# hostname used for naming of backups
+        import sys
+        import traceback
 
-BAK_DIR="/var/cache/backup"		# Local cache directory
+        try:
+            with open(self.curlevel_filename) as level_file:
+                self.curlevel = int(level_file.readline())
+        except:
+            self.curlevel = 0
+            if self.verbose:
+                print "DEBUG: Exception getting current level:"
+                traceback.print_exc(file=sys.stdout)
+                print "DEBUG: Setting current level to 0"
 
+    def __gunzip_incremental_data(self):
 
-DATE=$(date +%Y%m%d-%H%M%S.%N-%Z)
+        import gzip
+        import os
+        import shutil
 
-if [ -z "${1}" ]; then
-  echo "Usage: ${0} <CONFIG>"
-  exit 2
-fi
+        if self.curlevel == 0:
+            # First Full Backup
+            # cleanup previous incremental data
+            if os.path.exists(self.incremental_filename):
+                os.remove(self.incremental_filename)
+            if os.path.exists(self.incremental_filename+".gz"):
+                os.remove(self.incremental_filename+".gz")
+        else:
+            # Subsequent Incrementals
+            # decompress incremental data from previous backup
+            with gzip.open(self.incremental_filename+".gz", 'rb') as f_in, \
+                    open(self.incremental_filename, 'wb') as f_out:
+                shutil.copyfileobj(f_in, f_out)
 
-source ${1}
+    def __check_gpg_encryption(self, key_id, verbose=False):
+        """
+            test that we can encrypt to recipient
+        """
+        import subprocess
 
-export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
+        gpg_check_command = [
+            "gpg", "--quiet", "--trust-model", "always",
+            "--encrypt", "--recipient", key_id
+            ]
 
-if [ -z "${FILESYSTEMS}" ]; then
-	FILESYSTEMS=$(cat /etc/fstab | grep -v ^# | awk '{ if (match($2,/^\//)){print $2;}}')
-fi
+        gpg_process = subprocess.Popen(
+            gpg_check_command,
+            stdin=open("/dev/null"),
+            stdout=open("/dev/null", 'w'),
+            stderr=open("/dev/null", 'w')
+            )
+        return_code = gpg_process.wait()
+        if return_code == 0:
+            if verbose:
+                print "DEBUG: encryption to", key_id, "succeeded"
+            return True
+        else:
+            if verbose:
+                print "DEBUG: encryption to", key_id, "failed"
+            return False
 
-if [ ! -d ${BAK_DIR} ]; then
-	mkdir ${BAK_DIR}
-fi
+    def __init__(self, source_filesystem, force_full=False, max_level=3,
+        encrypt=False, recipients=None, cache_dir=DEFAULT_CACHE_DIR,
+        verbose=False):
 
-S3CMD_VERSION=1.5.2
-if [ ! -x ${BAK_DIR}/s3cmd-${S3CMD_VERSION}/s3cmd ]; then
-  wget -qO ${BAK_DIR}/s3cmd-v${S3CMD_VERSION}.zip "https://github.com/s3tools/s3cmd/archive/v${S3CMD_VERSION}.zip"
-  (cd ${BAK_DIR}; unzip -q s3cmd-v${S3CMD_VERSION}.zip)
-fi
+        import os
 
-for DIR in /var/cache ${BAK_DIR}; do
-	if [ ! -e ${DIR}/CACHEDIR.TAG ]; then
-		echo "Signature: 8a477f597d28d172789f06886806bc55" > ${DIR}/CACHEDIR.TAG
-	fi
-done
+        if verbose:
+            print "DEBUG: Backup filesystem:", source_filesystem
 
-if [ ! -f ${BAK_DIR}/curlevel ]; then
-	echo 0 > ${BAK_DIR}/curlevel
-fi
+        self.verbose = verbose
+        self.max_level = max_level
+        self.clean_filesystem = source_filesystem.replace("/", "_")
 
-CURLEVEL=`cat ${BAK_DIR}/curlevel`
+        backup_cache_dir = cache_dir + "/" + self.clean_filesystem
+        if not os.path.exists(backup_cache_dir):
+            os.makedirs(backup_cache_dir)
 
-#TODO: Check that level is numeric, set to 0 if not.
+        self.curlevel_filename = backup_cache_dir+"/curlevel"
+        if force_full:
+            self.curlevel = 0
+        else:
+            self.__get_cur_level()
 
-#GPG Setup
-GPG_RECIPIENTS=""
-for recipient in ${ENCRYPT_TO}; do
-	if ! gpg --list-keys ${recipient} > /dev/null 2>&1; then
-		echo "Attempting to download GPG Key: ${recipient}"
-		gpg --recv-key ${recipient}
-	fi
-	GPG_RECIPIENTS="${GPG_RECIPIENTS} -r ${recipient}"
-done
+        self.incremental_filename = backup_cache_dir+"/incr"
+        self.__gunzip_incremental_data()
 
+        self.tar_command = [
+            "tar", "-C", source_filesystem, "--exclude-caches-under",
+            "--listed-incremental="+self.incremental_filename,
+            "--one-file-system", "-clpf", "-", "."
+            ]
 
-mkdir ${BAK_DIR}/${DATE}.${CURLEVEL}
+        self.encrypt = encrypt
 
-pushd ${BAK_DIR}/${DATE}.${CURLEVEL} > /dev/null
+        if encrypt:
+            if verbose:
+                print "DEBUG: encrypt to:", ", ".join(recipients)
 
-if [ ${CURLEVEL} -eq 0 ]; then
+            self.gpg_command = [
+                "gpg", "--quiet", "--trust-model", "always", "--encrypt"
+                ]
 
-	if [ -e ${BAK_DIR}/.incremental ]; then
-		rm -rf ${BAK_DIR}/.incremental
-	fi
+            num_recipients = 0
+            for recipient in recipients:
+                if self.__check_gpg_encryption(recipient):
+                    self.gpg_command.extend(("--recipient", recipient))
+                    num_recipients += 1
+                else:
+                    print "WARNING: Skipping encryption recipient:", \
+                        recipient, "(encryption test failed)"
+            if num_recipients < 1:
+                raise Exception(
+                    "Encryption requested, but no valid recipients found")
 
-	mkdir ${BAK_DIR}/.incremental
-fi
+    def get_name(self):
 
-for FS in ${FILESYSTEMS}; do
+        import datetime
 
-	FS_CLEAN=${FS//\//_}
+        if self.encrypt:
+            ext = ".tar.gpg"
+        else:
+            ext = ".tar.gz"
 
-	if [ ${CURLEVEL} -gt 0 ]; then
-		gunzip -c ${BAK_DIR}/.incremental/${FS_CLEAN}.g.gz > \
-			${BAK_DIR}/.incremental/${FS_CLEAN}.g
-	fi
+        return self.clean_filesystem + "-" + \
+            datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "." + \
+            str(self.curlevel) + ext
 
-	tar -C ${FS} --exclude-caches-under --listed-incremental=${BAK_DIR}/.incremental/${FS_CLEAN}.g --one-file-system -clpf - . | gpg --quiet --trust-model always -e ${GPG_RECIPIENTS} | ${BAK_DIR}/s3cmd-${S3CMD_VERSION}/s3cmd --quiet put - ${BACKUP_BUCKET}/${HOST}/${DATE}.${CURLEVEL}/${FS_CLEAN}.tar.gpg
+    def get_pipe(self):
 
-	gzip -c ${BAK_DIR}/.incremental/${FS_CLEAN}.g > \
-		${BAK_DIR}/.incremental/${FS_CLEAN}.g.gz
-	rm ${BAK_DIR}/.incremental/${FS_CLEAN}.g
-done
+        import subprocess
 
-touch SUCCESS
+        tar_process = subprocess.Popen(self.tar_command, stdout=subprocess.PIPE)
 
-popd > /dev/null
+        if self.encrypt:
+            pipe_process = subprocess.Popen( self.gpg_command,
+                stdin=tar_process.stdout, stdout=subprocess.PIPE)
 
-if [ ${CURLEVEL} -ge ${LEVEL_LIMIT} ]; then
-	echo 0 > ${BAK_DIR}/curlevel
-else
-	echo $(( ${CURLEVEL} + 1 )) > ${BAK_DIR}/curlevel
-fi
+        else:
+            pipe_process = subprocess.Popen( [ "gzip", "-c" ],
+                stdin=tar_process.stdout, stdout=subprocess.PIPE)
+
+        tar_process.stdout.close()  # Allow tar_process to receive a
+                                    # SIGPIPE if gpg_process exits.
+        return pipe_process
+
+    def __gzip_incremental_data(self):
+        import gzip
+        import os
+        import shutil
+        with open(self.incremental_filename, 'rb') as f_in, \
+                gzip.open(self.incremental_filename+".gz", 'wb') as f_out:
+            shutil.copyfileobj(f_in, f_out)
+        os.remove(self.incremental_filename)
+
+    def __increment_level(self):
+        with open(self.curlevel_filename, 'w') as level_file:
+            if self.curlevel < self.max_level:
+                level_file.write(str(self.curlevel+1)+"\n")
+            else:
+                level_file.write("0\n")
+
+    def success(self):
+        if self.verbose:
+            print "DEBUG: backup completed successfully..."
+        self.__gzip_incremental_data()
+        self.__increment_level()
+
+    def failure(self):
+        # TODO: Failure Cleanup
+        #           * remove incremental
+        #               (leave previous gzip_incremental for next attempt)
+        #           * cleanup s3?
+        #           * print warning
+        raise Exception("Unimplemented")
+
+class S3Upload():
+
+    def __init__(self, destination, region, verbose=False):
+
+        from boto.s3.connection import S3Connection
+        from boto.s3.connection import OrdinaryCallingFormat
+
+        self.verbose = verbose
+
+        if self.verbose:
+            print "DEBUG: Setting up S3Connection to", region+":"+destination
+
+        host = "s3-"+region+".amazonaws.com"
+        conn = S3Connection(host=host, calling_format=OrdinaryCallingFormat())
+        self.bucket = conn.get_bucket(destination)
+
+    def multipart_from_process(self, backup_name, process,
+        verbose=False):
+        import cStringIO
+
+        if self.verbose:
+            print "DEBUG: Multipart Upload of", backup_name
+
+        multipart_upload = self.bucket.initiate_multipart_upload(backup_name)
+        part_num = 0
+
+        while True:
+            output = process.stdout.read(CHUNK_SIZE)
+            if output == '' and process.poll() is not None:
+                break
+            if output:
+                part_num += 1
+                if self.verbose:
+                    print "DEBUG: handle part:", part_num, " len:", len(output)
+                upload_fp = cStringIO.StringIO(output)
+                multipart_upload.upload_part_from_file(upload_fp, part_num)
+
+        return_code = process.poll()
+
+        if verbose:
+            print "DEBUG: process exited with code:", return_code
+        multipart_upload.complete_upload()
+
+        return True
+
+def ensure_cachedir_tag(cache_dir, verbose=False):
+    """
+        check for, create CACHEDIR.TAG in cache_dir
+    """
+
+    import os
+
+    if not os.path.exists(cache_dir + "/CACHEDIR.TAG"):
+        if verbose:
+            print "DEBUG: creating CACHEDIR.TAG in", cache_dir
+        with open(cache_dir + "/CACHEDIR.TAG", "w") as cachedir_tag:
+            cachedir_tag.write("Signature: 8a477f597d28d172789f06886806bc55\n")
+
+def get_system_hostname():
+    """
+        get system hostname
+    """
+    import socket
+
+    return socket.gethostname()
+
+def discover_filesystems():
+    """
+        auto-magically discover filesystems to backup
+    """
+
+    import os
+    import re
+
+    re_mountpoint = re.compile(r'^[^#]\S*\s+(/\S*)')
+
+    filesystems = []
+
+    with open("/etc/fstab") as fstab:
+        for line in fstab.readlines():
+            m_mountpoint = re_mountpoint.match(line)
+            if m_mountpoint:
+                mountpoint = m_mountpoint.group(1)
+                if os.path.ismount(mountpoint):
+                    filesystems.append(mountpoint)
+    return filesystems
+
+def main():
+    """
+        parse arguments and kickoff backups
+    """
+    import argparse
+    import os
+    import sys
+
+    # Argument Parser
+    argparser = argparse.ArgumentParser(
+        description="backup a filesystem to s3"
+        )
+
+    argparser.add_argument(
+        '-v', '--verbose',
+        action='store_true',
+        help='print a bunch of debugging and status info',
+        )
+
+    argparser.add_argument(
+        '-f', '--filesystem',
+        action='append',
+        help='filesystem path to backup',
+        )
+
+    argparser.add_argument(
+        '-m', '--max-level',
+        default=3,
+        help='maximum incremental level',
+        )
+    argparser.add_argument(
+        '-F', '--force-full',
+        action='store_true',
+        help='ignore current level and force full backup',
+        )
+
+    argparser.add_argument(
+        '-e', '--encrypt',
+        action='store_true',
+        help='encrypt the backup with gpg',
+        )
+    argparser.add_argument(
+        '-r', '--recipient',
+        action='append',
+        help='gpg recipient',
+        )
+
+    argparser.add_argument(
+        '-B', '--bucket',
+        help='s3 destination bucket',
+        )
+    argparser.add_argument(
+        '-R', '--region',
+        help='s3 destination region',
+        )
+    argparser.add_argument(
+        '-s', '--subdir',
+        default=get_system_hostname(),
+        help='s3 destination bucket subdirectory',
+        )
+
+    argparser.add_argument(
+        '-C', '--cache-dir',
+        default=DEFAULT_CACHE_DIR,
+        help='s3 destination region',
+        )
+
+    args = argparser.parse_args()
+
+    # Check arguments
+    if args.bucket == None:
+        print "Error: No destination bucket specified."
+        sys.exit(2)
+
+    if args.region == None:
+        print "Error: No destination regionspecified."
+        sys.exit(2)
+
+    if args.encrypt:
+        if args.recipient == None:
+            print "Error: requested encryption without any recipients."
+            sys.exit(2)
+
+    # Setup Cache Directory
+    if not os.path.exists(args.cache_dir):
+        os.makedirs(args.cache_dir)
+
+    ensure_cachedir_tag(args.cache_dir, verbose=args.verbose)
+
+    # Backup Filesystems
+    if args.filesystem == None:
+        filesystems = discover_filesystems()
+        if args.verbose:
+            print "DEBUG: discovered filesystems:", ", ".join(filesystems)
+    else:
+        filesystems = args.filesystem
+
+    upload = S3Upload(args.bucket, args.region, verbose=args.verbose)
+
+    for source_filesystem in filesystems:
+
+        backup = BackupFilesystem(
+            source_filesystem,
+            force_full=args.force_full,
+            max_level=args.max_level,
+            encrypt=args.encrypt,
+            recipients=args.recipient,
+            cache_dir=args.cache_dir,
+            verbose=args.verbose
+            )
+
+        upload.multipart_from_process(
+            args.subdir+"/"+backup.get_name(),
+            backup.get_pipe()
+            )
+
+        backup.success()
+
+if __name__ == "__main__":
+    main()
