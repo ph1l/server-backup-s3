@@ -273,7 +273,7 @@ def get_system_hostname():
     """
     import socket
 
-    return socket.gethostname()
+    return socket.getfqdn()
 
 def discover_filesystems():
     """
