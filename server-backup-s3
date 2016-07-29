@@ -223,7 +223,7 @@ class S3Upload():
 
         host = "s3-"+region+".amazonaws.com"
         conn = S3Connection(host=host, calling_format=OrdinaryCallingFormat())
-        self.bucket = conn.get_bucket(destination)
+        self.bucket = conn.get_bucket(destination, validate=False) # Avoid requiring unnecessary permissions
 
     def multipart_from_process(self, backup_name, process,
         verbose=False):
