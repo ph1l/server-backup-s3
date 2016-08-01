@@ -216,22 +216,30 @@ class BackupFilesystem():
 
 class S3Upload():
 
-    def __init__(self, destination, region, verbose=False):
+    def __connect_to_bucket(self):
 
         from boto.s3.connection import S3Connection
         from boto.s3.connection import OrdinaryCallingFormat
 
-        self.verbose = verbose
-
         if self.verbose:
-            print "DEBUG: Setting up S3Connection to", region+":"+destination
+            print "DEBUG: Setting up S3Connection to", self.host+":"+self.bucket
 
-        host = "s3-"+region+".amazonaws.com"
-        conn = S3Connection(host=host, calling_format=OrdinaryCallingFormat())
-        self.bucket = conn.get_bucket(destination, validate=False) # Avoid requiring unnecessary permissions
+        self.conn = S3Connection(host=self.host, calling_format=OrdinaryCallingFormat())
+        self.bucket = self.conn.get_bucket(self.bucket_name, validate=False) # Avoid requiring unnecessary permissions
+
+    def __init__(self, bucket_name, region, verbose=False):
+
+        self.verbose = verbose
+        self.host = "s3-"+region+".amazonaws.com"
+        self.bucket_name = bucket_name
+        self.conn = None
+        self.bucket = None
+        self.__connect_to_bucket()
 
     def multipart_from_process(self, backup_name, process,
         verbose=False):
+        import socket
+        import time
         import cStringIO
 
         if self.verbose:
@@ -248,8 +256,20 @@ class S3Upload():
                 part_num += 1
                 if self.verbose:
                     print "DEBUG: handle part:", part_num, " len:", len(output)
-                upload_fp = cStringIO.StringIO(output)
-                multipart_upload.upload_part_from_file(upload_fp, part_num)
+                while True:
+                    try:
+                        upload_fp = cStringIO.StringIO(output)
+                        multipart_upload.upload_part_from_file(upload_fp, part_num)
+                        break
+                    except socket.error:
+                        print "Warning: socket error in part upload"
+                        while True:
+                            try:
+                                self.__connect_to_bucket()
+                                break
+                            except socket.error:
+                                print "Warning: socket error in S3Connection, will retry..."
+                                time.sleep(15)
 
         return_code = process.poll()
 
