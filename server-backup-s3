@@ -35,6 +35,20 @@ DEFAULT_CACHE_DIR = "/var/cache/backup"
 
 DEFAULT_TEMP_DIR = "/tmp/backup"
 
+# DEFAULT_S3_RETRY_TIMEOUT
+#   time to wait, in seconds, before re attempting an S3 connection in failure
+#   state.
+#
+
+DEFAULT_S3_RETRY_TIMEOUT = 60
+
+# DEFAULT_S3_FAILURE_TIMEOUT
+#   after timeout, in seconds, give up and let backup fail
+#
+
+DEFAULT_S3_FAILURE_TIMEOUT = 7200
+
+
 class BackupFilesystem():
 
     def __get_cur_level(self):
@@ -207,12 +221,15 @@ class BackupFilesystem():
         self.__increment_level()
 
     def failure(self):
-        # TODO: Failure Cleanup
-        #           * remove incremental
-        #               (leave previous gzip_incremental for next attempt)
-        #           * cleanup s3?
-        #           * print warning
-        raise Exception("Unimplemented")
+
+        import os
+
+        print "Error: backup failed..."
+        if os.path.exists(self.incremental_filename):
+            os.remove(self.incremental_filename)
+
+class S3UploadError(Exception):
+    pass
 
 class S3Upload():
 
@@ -222,10 +239,13 @@ class S3Upload():
         from boto.s3.connection import OrdinaryCallingFormat
 
         if self.verbose:
-            print "DEBUG: Setting up S3Connection to", self.host+":"+self.bucket
+            print "DEBUG: Setting up S3Connection to", \
+                self.host+":"+self.bucket_name
 
-        self.conn = S3Connection(host=self.host, calling_format=OrdinaryCallingFormat())
-        self.bucket = self.conn.get_bucket(self.bucket_name, validate=False) # Avoid requiring unnecessary permissions
+        self.conn = S3Connection(host=self.host,
+            calling_format=OrdinaryCallingFormat()
+            )
+        self.bucket = self.conn.get_bucket(self.bucket_name, validate=False)
 
     def __init__(self, bucket_name, region, verbose=False):
 
@@ -249,6 +269,7 @@ class S3Upload():
         part_num = 0
 
         while True:
+            # READ INPUT DATA FROM PIPE
             output = process.stdout.read(CHUNK_SIZE)
             if output == '' and process.poll() is not None:
                 break
@@ -256,20 +277,47 @@ class S3Upload():
                 part_num += 1
                 if self.verbose:
                     print "DEBUG: handle part:", part_num, " len:", len(output)
+
                 while True:
+                    # TRY TO UPLOAD CHUNK TO S3
                     try:
                         upload_fp = cStringIO.StringIO(output)
-                        multipart_upload.upload_part_from_file(upload_fp, part_num)
+                        multipart_upload.upload_part_from_file(upload_fp,
+                            part_num)
                         break
+
                     except socket.error:
                         print "Warning: socket error in part upload"
+                        multipart_upload = None # abandon current mpu object
+                        first_fail_time = time.time()
+
                         while True:
+                            # TRY TO RECONNECT TO S3
                             try:
-                                self.__connect_to_bucket()
+                                self.__connect_to_bucket() # reconnect to bucket
+
+                                # find the mpu
+                                for upload in \
+                                    self.bucket.get_all_multipart_uploads():
+
+                                    if upload.key_name == backup_name:
+                                        multipart_upload = upload
                                 break
+
                             except socket.error:
-                                print "Warning: socket error in S3Connection, will retry..."
-                                time.sleep(15)
+
+                                if (time.time() > (first_fail_time +
+                                    DEFAULT_S3_FAILURE_TIMEOUT)):
+
+                                    raise S3UploadError(
+                                        "Error: reached hard fail timeout"
+                                        )
+
+                                print "Warning: socket error while "+ \
+                                    "reconnecting, will retry in "+ \
+                                    str(DEFAULT_S3_RETRY_TIMEOUT)+"s"
+
+                                time.sleep(DEFAULT_S3_RETRY_TIMEOUT)
 
         return_code = process.poll()
 
@@ -459,6 +507,7 @@ def main():
     import argparse
     import os
     import sys
+    import traceback
 
     # Argument Parser
     argparser = argparse.ArgumentParser(
@@ -557,64 +606,56 @@ def main():
 
     ensure_cachedir_tag(args.temp_dir, verbose=args.verbose)
 
+    backup_list = []
     # If no filesystems or logical volumes specified,
     if args.filesystem == None and args.logical_volume == None:
         # then get a list of local filesystems
         filesystems = discover_filesystems()
         if args.verbose:
             print "DEBUG: discovered filesystems:", ", ".join(filesystems)
+        for filesystem in filesystems:
+            backup_list.append(("FILESYSTEM", filesystem))
     else:
         # else, build list from args
-        if args.filesystem == None:
-            filesystems = []
-        else:
-            filesystems = args.filesystem
-        if args.logical_volume == None:
-            logical_volumes = []
-        else:
-            logical_volumes = args.logical_volume
+        if args.filesystem != None:
+            for filesystem in args.filesystem:
+                backup_list.append(("FILESYSTEM", filesystem))
+        if args.logical_volume != None:
+            for volume in args.logical_volume:
+                backup_list.append(("VOLUME", volume))
 
     upload = S3Upload(args.bucket, args.region, verbose=args.verbose)
 
-    for source_filesystem in filesystems:
+    for (backup_type, backup_source) in backup_list:
 
-        backup = BackupFilesystem(
-            source_filesystem,
-            force_full=args.force_full,
-            max_level=args.max_level,
-            encrypt=args.encrypt,
-            recipients=args.recipient,
-            cache_dir=args.cache_dir,
-            verbose=args.verbose
-            )
+        if backup_type == "VOLUME":
 
-        upload.multipart_from_process(
-            args.subdir+"/"+backup.get_name(),
-            backup.get_pipe()
-            )
+            (volume_group_name, logical_volume_name) = \
+                backup_source.split("/")
 
-        backup.success()
+            group = VolumeGroup(volume_group_name, verbose=args.verbose)
+            volume = group.get_volume(logical_volume_name)
 
-    for source_volume in logical_volumes:
+            # Make a snapshot
+            snapshot = volume.make_snapshot()
 
-        (volume_group_name, logical_volume_name) = \
-            source_volume.split("/")
+            # Setup Mountpoint
+            mountpoint = args.temp_dir + "/" + volume_group_name + \
+                "/" + logical_volume_name
 
-        group = VolumeGroup(volume_group_name, verbose=args.verbose)
-        volume = group.get_volume(logical_volume_name)
+            if not os.path.exists(mountpoint):
+                os.makedirs(mountpoint)
 
-        # Make a snapshot
-        snapshot = volume.make_snapshot()
+            # Mount it
+            snapshot.ro_mount(mountpoint)
 
-        # Setup Mountpoint
-        mountpoint = args.temp_dir + "/" + volume_group_name + \
-            "/" + logical_volume_name
+        elif backup_type == "FILESYSTEM":
 
-        if not os.path.exists(mountpoint):
-            os.makedirs(mountpoint)
+            mountpoint = backup_source
 
-        # Mount it
-        snapshot.ro_mount(mountpoint)
+        else:
+
+            raise Exception("Internal Error")
 
         # Do the backup
         backup = BackupFilesystem(
@@ -627,18 +668,33 @@ def main():
             verbose=args.verbose
             )
 
-        upload.multipart_from_process(
-            args.subdir+"/"+backup.get_name(),
-            backup.get_pipe()
-            )
+        try:
+            upload.multipart_from_process(
+                args.subdir+"/"+backup.get_name(),
+                backup.get_pipe()
+                )
 
-        backup.success()
+        except S3UploadError:
+            print "Error: S3UploadError, failing backup"
+            backup.failure()
 
-        ## Unmount the snapshot
-        snapshot.umount()
+        except:
+            print "Error: Unexpected exception in upload:"
+            traceback.print_exc(file=sys.stdout)
+            print "failing backup..."
+            backup.failure()
 
-        # Remove the snapshot
-        snapshot.remove()
+        else:
+            backup.success()
+
+
+        if backup_type == "VOLUME":
+
+            ## Unmount the snapshot
+            snapshot.umount()
+
+            # Remove the snapshot
+            snapshot.remove()
 
 if __name__ == "__main__":
     main()
