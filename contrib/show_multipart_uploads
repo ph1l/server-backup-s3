@@ -11,7 +11,7 @@ if len(sys.argv) < 3:
 
 host = "s3-"+sys.argv[1]+".amazonaws.com"
 connection = S3Connection(host=host, calling_format=OrdinaryCallingFormat())
-bucket = connection.get_bucket(sys.argv[2])
+bucket = connection.get_bucket(sys.argv[2], validate=False)
 
 uploads = bucket.get_all_multipart_uploads()
 print len(uploads), "incomplete multi-part uploads found."
