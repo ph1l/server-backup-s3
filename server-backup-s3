@@ -184,17 +184,18 @@ class BackupFilesystem():
 
         import subprocess
 
-        tar_process = subprocess.Popen(self.tar_command, stdout=subprocess.PIPE)
+        self.tar_process = subprocess.Popen(self.tar_command,
+            stdout=subprocess.PIPE)
 
         if self.encrypt:
             pipe_process = subprocess.Popen( self.gpg_command,
-                stdin=tar_process.stdout, stdout=subprocess.PIPE)
+                stdin=self.tar_process.stdout, stdout=subprocess.PIPE)
 
         else:
-            pipe_process = subprocess.Popen( [ "gzip", "-c" ],
-                stdin=tar_process.stdout, stdout=subprocess.PIPE)
+            self.pipe_process = subprocess.Popen( [ "gzip", "-c" ],
+                stdin=self.tar_process.stdout, stdout=subprocess.PIPE)
 
-        tar_process.stdout.close()  # Allow tar_process to receive a
+        self.tar_process.stdout.close()  # Allow tar_process to receive a
                                     # SIGPIPE if gpg_process exits.
         return pipe_process
 
@@ -225,6 +226,11 @@ class BackupFilesystem():
         import os
 
         print "Error: backup failed..."
+        # Terminate tar process
+        self.tar_process.terminate()
+        # wait for process to stop
+        self.tar_process.communicate()
+        # remove new incremental data
         if os.path.exists(self.incremental_filename):
             os.remove(self.incremental_filename)
 
