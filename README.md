@@ -31,13 +31,24 @@ s3:PutObject in the backup bucket. Example IAM user inline policy:
         "Version": "2012-10-17",
         "Statement": [
             {
-                "Sid": "Stmt1456902749000",
+                "Sid": "1",
                 "Effect": "Allow",
                 "Action": [
-                    "s3:PutObject"
+                    "s3:PutObject",
+                    "s3:AbortMultipartUpload"
                 ],
                 "Resource": [
                     "arn:aws:s3:::server-backup.example.com/*"
+                ]
+            },
+            {
+                "Sid": "2",
+                "Effect": "Allow",
+                "Action": [
+                    "s3:ListBucketMultipartUploads"
+                ],
+                "Resource": [
+                    "arn:aws:s3:::server-backup.example.com"
                 ]
             }
         ]
