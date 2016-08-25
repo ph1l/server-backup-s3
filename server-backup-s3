@@ -300,15 +300,19 @@ class S3Upload():
                         while True:
                             # TRY TO RECONNECT TO S3
                             try:
+                                print "  Trying to reconnect to S3"
                                 self.__connect_to_bucket() # reconnect to bucket
 
                                 # find the mpu
                                 for upload in \
                                     self.bucket.get_all_multipart_uploads():
 
+                                    print "  Check multi-part upload: %s"%(upload.key_name)
+
                                     if upload.key_name == backup_name:
+                                        print " that's it..."
                                         multipart_upload = upload
-                                break
+                                        break
 
                             except socket.error:
 
