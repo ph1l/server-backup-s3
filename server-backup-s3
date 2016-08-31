@@ -25,6 +25,11 @@
 
 CHUNK_SIZE = 32*1024*1024 # 32MiB
 
+# MAX_S3_OBJECT_SIZE
+#   defines the maximum object size we upload to s3
+
+MAX_S3_OBJECT_SIZE = 1024*1024*1024*1024*2 # 2TB
+
 # DEFAULT_CACHE_DIR
 #   defines where we cache local info about tar's listed-incremental archives
 
@@ -267,33 +272,59 @@ class S3Upload():
         import socket
         import time
         import cStringIO
+        import sys
+        import traceback
 
         if self.verbose:
             print "DEBUG: Multipart Upload of", backup_name
 
         multipart_upload = self.bucket.initiate_multipart_upload(backup_name)
         part_num = 0
+        object_num = 0
+        bytes_uploaded = 0
 
         while True:
             # READ INPUT DATA FROM PIPE
             output = process.stdout.read(CHUNK_SIZE)
+
             if output == '' and process.poll() is not None:
                 break
+
             if output:
+                bytes_read = len(output)
+                # Handle backups larger than MAX_S3_OBJECT_SIZE
+                if bytes_uploaded + bytes_read > MAX_S3_OBJECT_SIZE:
+                    if self.verbose:
+                        print "DEBUG: OVERFLOWING MAX_S3_OBJECT_SIZE."
+                    # finish multipart upload
+                    multipart_upload.complete_upload()
+
+                    # reset counters
+                    part_num = 0
+                    object_num += 1
+                    bytes_uploaded = 0
+
+                    # setup next upload object
+                    multipart_upload = self.bucket.initiate_multipart_upload("%s.%02d"%(backup_name,object_num))
+
+                    if self.verbose:
+                        print "DEBUG: setup next upload object:", "%s.%02d"%(backup_name,object_num)
+
                 part_num += 1
-                if self.verbose:
-                    print "DEBUG: handle part:", part_num, " len:", len(output)
 
                 while True:
-                    # TRY TO UPLOAD CHUNK TO S3
+                    if self.verbose:
+                        print "DEBUG: TRYING UPLOAD CHUNK:", part_num, " len:", len(output)
                     try:
                         upload_fp = cStringIO.StringIO(output)
                         multipart_upload.upload_part_from_file(upload_fp,
                             part_num)
+                        bytes_uploaded += bytes_read
                         break
 
                     except socket.error:
-                        print "Warning: socket error in part upload"
+                        print "Warning: socket error in part upload:"
+                        traceback.print_exc(file=sys.stdout)
                         multipart_upload = None # abandon current mpu object
                         first_fail_time = time.time()
 
@@ -309,7 +340,15 @@ class S3Upload():
 
                                     print "  Check multi-part upload: %s"%(upload.key_name)
 
-                                    if upload.key_name == backup_name:
+                                    if (
+                                            (
+                                              object_num == 0 and
+                                              upload.key_name == backup_name
+                                            ) or (
+                                              object_num > 0 and
+                                              upload.key_name == "%s.%02d"%(backup_name,object_num)
+                                            )
+                                        ):
                                         print " that's it..."
                                         multipart_upload = upload
                                 break # from out of while True..
@@ -324,10 +363,15 @@ class S3Upload():
                                         )
 
                                 print "Warning: socket error while "+ \
-                                    "reconnecting, will retry in "+ \
+                                    "reconnecting:"
+                                traceback.print_exc(file=sys.stdout)
+                                print "will retry in"+ \
                                     str(DEFAULT_S3_RETRY_TIMEOUT)+"s"
 
                                 time.sleep(DEFAULT_S3_RETRY_TIMEOUT)
+
+        if self.verbose:
+            print "DEBUG: done with upload of", backup_name, "in", object_num+1, "objects"
 
         return_code = process.poll()
 
