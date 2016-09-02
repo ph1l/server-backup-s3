@@ -1,0 +1,24 @@
+#!/usr/bin/python
+
+import sys
+
+from boto.s3.connection import S3Connection
+from boto.s3.connection import OrdinaryCallingFormat
+
+if len(sys.argv) < 3:
+        print "Usage: %s <REGION> <BUCKET>"%(sys.argv[0])
+        sys.exit(2)
+
+host = "s3-"+sys.argv[1]+".amazonaws.com"
+connection = S3Connection(host=host, calling_format=OrdinaryCallingFormat())
+bucket = connection.get_bucket(sys.argv[2], validate=False)
+
+uploads = bucket.get_all_multipart_uploads()
+print len(uploads), "incomplete multi-part uploads found."
+for u in uploads:
+	size = 0
+	parts = 0
+	for p in u.get_all_parts():
+		parts += 1
+		size += p.size
+	print "%s parts=%s size=%s" % (u.key_name, parts, size)
