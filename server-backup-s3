@@ -20,25 +20,27 @@
 
 """
 
-# CHUNK_SIZE
-#   defines the size of multi-part "chunks" we upload to s3
-
-CHUNK_SIZE = 32*1024*1024 # 32MiB
+# MULTIPART Settings
+####################
+#
+# Limitations:
+#  * Multipart uploads can have at most 10000 parts.
+#  * Objects can be up to 5TB in total size.
+#
+# so MAX_S3_OBJECT_SIZE / MAX_S3_OBJECT_SIZE must be less than 10000.
+#
+# (https://aws.amazon.com/blogs/aws/amazon-s3-multipart-upload/)
+#
 
 # MAX_S3_OBJECT_SIZE
 #   defines the maximum object size we upload to s3
 
-MAX_S3_OBJECT_SIZE = 1024*1024*1024*1024*2 # 2TB
+MAX_S3_OBJECT_SIZE = 1024*1024*1024*1024 # 1TB
 
-# DEFAULT_CACHE_DIR
-#   defines where we cache local info about tar's listed-incremental archives
+# CHUNK_SIZE
+#   defines the size of multi-part "chunks" we upload to s3
 
-DEFAULT_CACHE_DIR = "/var/cache/backup"
-
-# DEFAULT_TEMP_DIR
-#   defines where we mount lvm snapshots for backups
-
-DEFAULT_TEMP_DIR = "/tmp/backup"
+CHUNK_SIZE = 1024*1024*128 # 128MiB
 
 # DEFAULT_S3_RETRY_TIMEOUT
 #   time to wait, in seconds, before re attempting an S3 connection in failure
@@ -52,6 +54,21 @@ DEFAULT_S3_RETRY_TIMEOUT = 60
 #
 
 DEFAULT_S3_FAILURE_TIMEOUT = 7200
+
+
+# Path Defaults
+###############
+#
+
+# DEFAULT_CACHE_DIR
+#   defines where we cache local info about tar's listed-incremental archives
+
+DEFAULT_CACHE_DIR = "/var/cache/backup"
+
+# DEFAULT_TEMP_DIR
+#   defines where we mount lvm snapshots for backups
+
+DEFAULT_TEMP_DIR = "/tmp/backup"
 
 
 class BackupFilesystem():
