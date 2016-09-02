@@ -16,5 +16,9 @@ bucket = connection.get_bucket(sys.argv[2], validate=False)
 uploads = bucket.get_all_multipart_uploads()
 print len(uploads), "incomplete multi-part uploads found."
 for u in uploads:
-	print u.key_name
-
+	size = 0
+	parts = 0
+	for p in u.get_all_parts():
+		parts += 1
+		size += p.size
+	print "%s parts=%s size=%s" % (u.key_name, parts, size)
