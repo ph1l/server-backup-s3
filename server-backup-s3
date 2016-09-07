@@ -20,15 +20,56 @@
 
 """
 
+# MULTIPART Settings
+####################
+#
+# Limitations:
+#  * Multipart uploads can have at most 10000 parts.
+#  * Objects can be up to 5TB in total size.
+#
+# so MAX_S3_OBJECT_SIZE / MAX_S3_OBJECT_SIZE must be less than 10000.
+#
+# (https://aws.amazon.com/blogs/aws/amazon-s3-multipart-upload/)
+#
+
+# MAX_S3_OBJECT_SIZE
+#   defines the maximum object size we upload to s3
+
+MAX_S3_OBJECT_SIZE = 1024*1024*1024*1024 # 1TB
+
 # CHUNK_SIZE
 #   defines the size of multi-part "chunks" we upload to s3
 
-CHUNK_SIZE = 32*1024*1024 # 32MiB
+CHUNK_SIZE = 1024*1024*128 # 128MiB
+
+# DEFAULT_S3_RETRY_TIMEOUT
+#   time to wait, in seconds, before re attempting an S3 connection in failure
+#   state.
+#
+
+DEFAULT_S3_RETRY_TIMEOUT = 60
+
+# DEFAULT_S3_FAILURE_TIMEOUT
+#   after timeout, in seconds, give up and let backup fail
+#
+
+DEFAULT_S3_FAILURE_TIMEOUT = 7200
+
+
+# Path Defaults
+###############
+#
 
 # DEFAULT_CACHE_DIR
 #   defines where we cache local info about tar's listed-incremental archives
 
 DEFAULT_CACHE_DIR = "/var/cache/backup"
+
+# DEFAULT_TEMP_DIR
+#   defines where we mount lvm snapshots for backups
+
+DEFAULT_TEMP_DIR = "/tmp/backup"
+
 
 class BackupFilesystem():
 
@@ -165,17 +206,18 @@ class BackupFilesystem():
 
         import subprocess
 
-        tar_process = subprocess.Popen(self.tar_command, stdout=subprocess.PIPE)
+        self.tar_process = subprocess.Popen(self.tar_command,
+            stdout=subprocess.PIPE)
 
         if self.encrypt:
             pipe_process = subprocess.Popen( self.gpg_command,
-                stdin=tar_process.stdout, stdout=subprocess.PIPE)
+                stdin=self.tar_process.stdout, stdout=subprocess.PIPE)
 
         else:
-            pipe_process = subprocess.Popen( [ "gzip", "-c" ],
-                stdin=tar_process.stdout, stdout=subprocess.PIPE)
+            self.pipe_process = subprocess.Popen( [ "gzip", "-c" ],
+                stdin=self.tar_process.stdout, stdout=subprocess.PIPE)
 
-        tar_process.stdout.close()  # Allow tar_process to receive a
+        self.tar_process.stdout.close()  # Allow tar_process to receive a
                                     # SIGPIPE if gpg_process exits.
         return pipe_process
 
@@ -202,49 +244,151 @@ class BackupFilesystem():
         self.__increment_level()
 
     def failure(self):
-        # TODO: Failure Cleanup
-        #           * remove incremental
-        #               (leave previous gzip_incremental for next attempt)
-        #           * cleanup s3?
-        #           * print warning
-        raise Exception("Unimplemented")
+
+        import os
+
+        print "Error: backup failed..."
+        # Terminate tar process
+        self.tar_process.terminate()
+        # wait for process to stop
+        self.tar_process.communicate()
+        # remove new incremental data
+        if os.path.exists(self.incremental_filename):
+            os.remove(self.incremental_filename)
+
+class S3UploadError(Exception):
+    pass
 
 class S3Upload():
 
-    def __init__(self, destination, region, verbose=False):
+    def __connect_to_bucket(self):
 
         from boto.s3.connection import S3Connection
         from boto.s3.connection import OrdinaryCallingFormat
 
-        self.verbose = verbose
-
         if self.verbose:
-            print "DEBUG: Setting up S3Connection to", region+":"+destination
+            print "DEBUG: Setting up S3Connection to", \
+                self.host+":"+self.bucket_name
 
-        host = "s3-"+region+".amazonaws.com"
-        conn = S3Connection(host=host, calling_format=OrdinaryCallingFormat())
-        self.bucket = conn.get_bucket(destination, validate=False) # Avoid requiring unnecessary permissions
+        self.conn = S3Connection(host=self.host,
+            calling_format=OrdinaryCallingFormat()
+            )
+        self.bucket = self.conn.get_bucket(self.bucket_name, validate=False)
+
+    def __init__(self, bucket_name, region, verbose=False):
+
+        self.verbose = verbose
+        self.host = "s3-"+region+".amazonaws.com"
+        self.bucket_name = bucket_name
+        self.conn = None
+        self.bucket = None
+        self.__connect_to_bucket()
 
     def multipart_from_process(self, backup_name, process,
         verbose=False):
+        import socket
+        import time
         import cStringIO
+        import sys
+        import traceback
 
         if self.verbose:
             print "DEBUG: Multipart Upload of", backup_name
 
         multipart_upload = self.bucket.initiate_multipart_upload(backup_name)
         part_num = 0
+        object_num = 0
+        bytes_uploaded = 0
 
         while True:
+            # READ INPUT DATA FROM PIPE
             output = process.stdout.read(CHUNK_SIZE)
+
             if output == '' and process.poll() is not None:
                 break
+
             if output:
+                bytes_read = len(output)
+                # Handle backups larger than MAX_S3_OBJECT_SIZE
+                if bytes_uploaded + bytes_read > MAX_S3_OBJECT_SIZE:
+                    if self.verbose:
+                        print "DEBUG: OVERFLOWING MAX_S3_OBJECT_SIZE."
+                    # finish multipart upload
+                    multipart_upload.complete_upload()
+
+                    # reset counters
+                    part_num = 0
+                    object_num += 1
+                    bytes_uploaded = 0
+
+                    # setup next upload object
+                    multipart_upload = self.bucket.initiate_multipart_upload("%s.%02d"%(backup_name,object_num))
+
+                    if self.verbose:
+                        print "DEBUG: setup next upload object:", "%s.%02d"%(backup_name,object_num)
+
                 part_num += 1
-                if self.verbose:
-                    print "DEBUG: handle part:", part_num, " len:", len(output)
-                upload_fp = cStringIO.StringIO(output)
-                multipart_upload.upload_part_from_file(upload_fp, part_num)
+
+                while True:
+                    if self.verbose:
+                        print "DEBUG: TRYING UPLOAD CHUNK:", part_num, " len:", len(output)
+                    try:
+                        upload_fp = cStringIO.StringIO(output)
+                        multipart_upload.upload_part_from_file(upload_fp,
+                            part_num)
+                        bytes_uploaded += bytes_read
+                        break
+
+                    except socket.error:
+                        print "Warning: socket error in part upload:"
+                        traceback.print_exc(file=sys.stdout)
+                        multipart_upload = None # abandon current mpu object
+                        first_fail_time = time.time()
+
+                        while True:
+                            # TRY TO RECONNECT TO S3
+                            try:
+                                print "  Trying to reconnect to S3"
+                                self.__connect_to_bucket() # reconnect to bucket
+
+                                # find the mpu
+                                for upload in \
+                                    self.bucket.get_all_multipart_uploads():
+
+                                    print "  Check multi-part upload: %s"%(upload.key_name)
+
+                                    if (
+                                            (
+                                              object_num == 0 and
+                                              upload.key_name == backup_name
+                                            ) or (
+                                              object_num > 0 and
+                                              upload.key_name == "%s.%02d"%(backup_name,object_num)
+                                            )
+                                        ):
+                                        print " that's it..."
+                                        multipart_upload = upload
+                                break # from out of while True..
+
+                            except socket.error:
+
+                                if (time.time() > (first_fail_time +
+                                    DEFAULT_S3_FAILURE_TIMEOUT)):
+
+                                    raise S3UploadError(
+                                        "Error: reached hard fail timeout"
+                                        )
+
+                                print "Warning: socket error while "+ \
+                                    "reconnecting:"
+                                traceback.print_exc(file=sys.stdout)
+                                print "will retry in"+ \
+                                    str(DEFAULT_S3_RETRY_TIMEOUT)+"s"
+
+                                time.sleep(DEFAULT_S3_RETRY_TIMEOUT)
+
+        if self.verbose:
+            print "DEBUG: done with upload of", backup_name, "in", object_num+1, "objects"
 
         return_code = process.poll()
 
@@ -296,6 +440,137 @@ def discover_filesystems():
                     filesystems.append(mountpoint)
     return filesystems
 
+class LogicalVolumeSnapshot():
+
+    def __init__(self, volume, name, size, verbose=False):
+        import subprocess
+
+        self.volume = volume
+        self.name = name
+        self.mounted = False
+        self.verbose = verbose
+
+        lvcreate_cmd = ["lvcreate", "-L"+str(size)+"B", "-s", "-n",
+            self.name, self.volume.group.name + "/" + self.volume.name]
+
+        lvcreate_process = subprocess.Popen(lvcreate_cmd)
+        return_code = lvcreate_process.wait()
+        if return_code != 0:
+            raise Exception("Error: command failed")
+
+        self.device = "/dev/"+self.volume.group.name+"/"+self.name
+
+    def is_mounted(self):
+        return self.mounted
+
+    def ro_mount(self, mountpoint):
+        import subprocess
+
+        if self.is_mounted():
+            raise Exception("Snapshot already mounted.")
+        mount_cmd = ["mount", "-o", "ro", self.device, mountpoint]
+        mount_process = subprocess.Popen(mount_cmd)
+        return_code = mount_process.wait()
+        if return_code != 0:
+            raise Exception("Error: command failed")
+        elif self.verbose:
+            print "DEBUG: Successfully mounted", self.device, "on", \
+                mountpoint
+
+        self.mounted = True
+
+    def umount(self):
+        import subprocess
+        import time
+
+        #Avoid race conditions:
+        time.sleep(2)
+        if not self.is_mounted():
+            raise Exception("Snapshot not mounted.")
+        umount_cmd = ["umount", self.device]
+        umount_process = subprocess.Popen(umount_cmd)
+        return_code = umount_process.wait()
+        if return_code != 0:
+            raise Exception("Error: command failed")
+        elif self.verbose:
+            print "DEBUG: Successfully umounted", self.device
+
+        self.mounted = False
+
+    def remove(self):
+        import subprocess
+
+        if self.is_mounted():
+            raise Exception("Snapshot mounted.")
+        lvremove_cmd = ["lvremove", "-f", self.volume.group.name + "/" + \
+            self.name]
+
+        lvremove_process = subprocess.Popen(lvremove_cmd)
+        return_code = lvremove_process.wait()
+        if return_code != 0:
+            raise Exception("Error: command failed")
+        elif self.verbose:
+            print "DEBUG: Successfully removed", self.name
+
+
+class LogicalVolume():
+    def __init__(self, group, volume_name, verbose=False):
+        import re
+
+        self.re_number = re.compile(r'^\s*(\d+)')
+        self.group = group
+        self.name = volume_name
+        self.verbose = verbose
+
+    def get_size(self):
+        import subprocess
+
+        size_cmd = [ "lvs", "--noheadings", "--units", "B",
+            self.group.name + "/" + self.name, "-o", "lv_size" ]
+
+        size_process = subprocess.Popen(size_cmd, stdout=subprocess.PIPE)
+        return_code = size_process.wait()
+        if return_code != 0:
+            raise Exception("Error: command failed")
+        output = size_process.stdout.read()
+        m_number = self.re_number.match(output)
+        if m_number == None:
+            raise Exception("Error: parsing command output: "+output)
+        size = int(m_number.group(1))
+        if self.verbose:
+            print "DEBUG: got LogicalVolume size:", size
+        return size
+
+    def make_snapshot(self, allocation_pct=100):
+        import datetime
+
+        lv_size = self.get_size()
+        snap_allocation = (
+            (int(
+                lv_size * float(allocation_pct/100.0)   # Calculate percentage
+            ) / 512) * 512                              # Use a 512B boundry
+            + (1024*1024*128)                           # add 128MB for overhead
+            )
+        if self.verbose:
+            print "DEBUG: "+str(allocation_pct)+"% of "+str(lv_size)+ \
+                "B = "+str(snap_allocation)+"B"
+        snap_name = self.name+".snapshot." + \
+            datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+        if self.verbose:
+            print "DEBUG: generating snapshot", snap_name, "in", self.group.name
+        return LogicalVolumeSnapshot(self, snap_name, snap_allocation,
+            verbose=self.verbose)
+
+class VolumeGroup():
+    def __init__(self, group_name, verbose=False):
+        self.name = group_name
+        self.verbose = verbose
+
+        # TODO: Validation
+
+    def get_volume(self, volume_name):
+        return LogicalVolume(self, volume_name, verbose=self.verbose)
+
 def main():
     """
         parse arguments and kickoff backups
@@ -303,6 +578,7 @@ def main():
     import argparse
     import os
     import sys
+    import traceback
 
     # Argument Parser
     argparser = argparse.ArgumentParser(
@@ -319,6 +595,11 @@ def main():
         '-f', '--filesystem',
         action='append',
         help='filesystem path to backup',
+        )
+    argparser.add_argument(
+        '-l', '--logical-volume',
+        action='append',
+        help='logical volume to backup',
         )
 
     argparser.add_argument(
@@ -362,6 +643,11 @@ def main():
         default=DEFAULT_CACHE_DIR,
         help='s3 destination region',
         )
+    argparser.add_argument(
+        '-T', '--temp-dir',
+        default=DEFAULT_TEMP_DIR,
+        help='temporary directory for mounting lvm snapshots',
+        )
 
     args = argparser.parse_args()
 
@@ -385,20 +671,66 @@ def main():
 
     ensure_cachedir_tag(args.cache_dir, verbose=args.verbose)
 
-    # Backup Filesystems
-    if args.filesystem == None:
+    # Setup Temporary Directory
+    if not os.path.exists(args.temp_dir):
+        os.makedirs(args.temp_dir)
+
+    ensure_cachedir_tag(args.temp_dir, verbose=args.verbose)
+
+    backup_list = []
+    # If no filesystems or logical volumes specified,
+    if args.filesystem == None and args.logical_volume == None:
+        # then get a list of local filesystems
         filesystems = discover_filesystems()
         if args.verbose:
             print "DEBUG: discovered filesystems:", ", ".join(filesystems)
+        for filesystem in filesystems:
+            backup_list.append(("FILESYSTEM", filesystem))
     else:
-        filesystems = args.filesystem
+        # else, build list from args
+        if args.filesystem != None:
+            for filesystem in args.filesystem:
+                backup_list.append(("FILESYSTEM", filesystem))
+        if args.logical_volume != None:
+            for volume in args.logical_volume:
+                backup_list.append(("VOLUME", volume))
 
     upload = S3Upload(args.bucket, args.region, verbose=args.verbose)
 
-    for source_filesystem in filesystems:
+    for (backup_type, backup_source) in backup_list:
 
+        if backup_type == "VOLUME":
+
+            (volume_group_name, logical_volume_name) = \
+                backup_source.split("/")
+
+            group = VolumeGroup(volume_group_name, verbose=args.verbose)
+            volume = group.get_volume(logical_volume_name)
+
+            # Make a snapshot
+            snapshot = volume.make_snapshot()
+
+            # Setup Mountpoint
+            mountpoint = args.temp_dir + "/" + volume_group_name + \
+                "/" + logical_volume_name
+
+            if not os.path.exists(mountpoint):
+                os.makedirs(mountpoint)
+
+            # Mount it
+            snapshot.ro_mount(mountpoint)
+
+        elif backup_type == "FILESYSTEM":
+
+            mountpoint = backup_source
+
+        else:
+
+            raise Exception("Internal Error")
+
+        # Do the backup
         backup = BackupFilesystem(
-            source_filesystem,
+            mountpoint,
             force_full=args.force_full,
             max_level=args.max_level,
             encrypt=args.encrypt,
@@ -407,12 +739,33 @@ def main():
             verbose=args.verbose
             )
 
-        upload.multipart_from_process(
-            args.subdir+"/"+backup.get_name(),
-            backup.get_pipe()
-            )
+        try:
+            upload.multipart_from_process(
+                args.subdir+"/"+backup.get_name(),
+                backup.get_pipe()
+                )
 
-        backup.success()
+        except S3UploadError:
+            print "Error: S3UploadError, failing backup"
+            backup.failure()
+
+        except:
+            print "Error: Unexpected exception in upload:"
+            traceback.print_exc(file=sys.stdout)
+            print "failing backup..."
+            backup.failure()
+
+        else:
+            backup.success()
+
+
+        if backup_type == "VOLUME":
+
+            ## Unmount the snapshot
+            snapshot.umount()
+
+            # Remove the snapshot
+            snapshot.remove()
 
 if __name__ == "__main__":
     main()
