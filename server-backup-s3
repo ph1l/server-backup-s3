@@ -736,34 +736,40 @@ def main():
             raise Exception("Internal Error")
 
         # Do the backup
-        backup = BackupFilesystem(
-            mountpoint,
-            force_full=args.force_full,
-            max_level=args.max_level,
-            encrypt=args.encrypt,
-            recipients=args.recipient,
-            cache_dir=args.cache_dir,
-            verbose=args.verbose
-            )
-
         try:
-            upload.multipart_from_process(
-                args.subdir+"/"+backup.get_name(),
-                backup.get_pipe()
+            backup = BackupFilesystem(
+                mountpoint,
+                force_full=args.force_full,
+                max_level=args.max_level,
+                encrypt=args.encrypt,
+                recipients=args.recipient,
+                cache_dir=args.cache_dir,
+                verbose=args.verbose
                 )
-
-        except S3UploadError:
-            print "Error: S3UploadError, failing backup"
-            backup.failure()
-
         except:
-            print "Error: Unexpected exception in upload:"
+            print "Error: Unexpected exception setting up backup:"
             traceback.print_exc(file=sys.stdout)
-            print "failing backup..."
-            backup.failure()
 
         else:
-            backup.success()
+
+            try:
+                upload.multipart_from_process(
+                    args.subdir+"/"+backup.get_name(),
+                    backup.get_pipe()
+                    )
+
+            except S3UploadError:
+                print "Error: S3UploadError, failing backup"
+                backup.failure()
+
+            except:
+                print "Error: Unexpected exception in upload:"
+                traceback.print_exc(file=sys.stdout)
+                print "failing backup..."
+                backup.failure()
+
+            else:
+                backup.success()
 
 
         if backup_type == "VOLUME":
