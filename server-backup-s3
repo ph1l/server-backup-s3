@@ -649,6 +649,13 @@ def main():
         help='temporary directory for mounting lvm snapshots',
         )
 
+    argparser.add_argument(
+        '-P', '--snapshot-percentage',
+        type=int,
+        default=100,
+        help='percentage of source volume size to allocate for snapshot',
+        )
+
     args = argparser.parse_args()
 
     # Check arguments
@@ -708,7 +715,7 @@ def main():
             volume = group.get_volume(logical_volume_name)
 
             # Make a snapshot
-            snapshot = volume.make_snapshot()
+            snapshot = volume.make_snapshot(allocation_pct=args.snapshot_percentage)
 
             # Setup Mountpoint
             mountpoint = args.temp_dir + "/" + volume_group_name + \
