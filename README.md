@@ -53,3 +53,29 @@ s3:PutObject in the backup bucket. Example IAM user inline policy:
             }
         ]
     }
+
+## Crontab Example
+
+This is an example setup of a server backup of all mounted filesystems monthly.
+
+* Create a file to store backup credentials:
+
+    sudo touch /etc/server-backup-s3.source
+    sudo chmod 600 /etc/server-backup-s3.source
+    sudo ${EDITOR} /etc/server-backup-s3.source
+
+Use the following contents (with your valid backup creds:)
+
+    export AWS_ACCESS_KEY_ID=AAAAAAA
+    export AWS_SECRET_ACCESS_KEY=xxxxxxxxxxxxxxxxxxxxx
+
+* Download public key for backup encryption
+
+    sudo gpg --recv-keys CE4A0BF21E1C237DD8C400FAA39487B22697143F
+
+* Here's an example crontab for root (`sudo crontab -e`)
+
+    MAILTO=admin@example.com
+    PATH=/usr/bin:/bin:/usr/sbin:/sbin
+    # m h  dom mon dow   command
+    1 0 1 * * . /etc/server-backup-s3.source && /usr/local/sbin/server-backup-s3 --encrypt --recipient CE4A0BF21E1C237DD8C400FAA39487B22697143F --bucket backups.example.com --region us-west-1
