@@ -28,7 +28,7 @@ class S3UploadError(Exception):
     pass
 
 
-class S3Upload():
+class S3Upload(object):
 
     def __connect_to_bucket(self):
 
@@ -39,7 +39,8 @@ class S3Upload():
             print "DEBUG: Setting up S3Connection to", \
                 self.host+":"+self.bucket_name
 
-        self.conn = S3Connection(host=self.host,
+        self.conn = S3Connection(
+            host=self.host,
             calling_format=OrdinaryCallingFormat()
             )
         self.bucket = self.conn.get_bucket(self.bucket_name, validate=False)
@@ -54,7 +55,7 @@ class S3Upload():
         self.__connect_to_bucket()
 
     def multipart_from_process(self, backup_name, process,
-        verbose=False):
+                               verbose=False):
         import socket
         import time
         import cStringIO
@@ -91,20 +92,24 @@ class S3Upload():
                     bytes_uploaded = 0
 
                     # setup next upload object
-                    multipart_upload = self.bucket.initiate_multipart_upload("%s.%02d"%(backup_name,object_num))
+                    multipart_upload = self.bucket.initiate_multipart_upload(
+                        "%s.%02d"%(backup_name, object_num)
+                        )
 
                     if self.verbose:
-                        print "DEBUG: setup next upload object:", "%s.%02d"%(backup_name,object_num)
+                        print "DEBUG: setup next upload object:", \
+                            "%s.%02d"%(backup_name, object_num)
 
                 part_num += 1
 
                 while True:
                     if self.verbose:
-                        print "DEBUG: TRYING UPLOAD CHUNK:", part_num, " len:", len(output)
+                        print "DEBUG: TRYING UPLOAD CHUNK:", \
+                            part_num, " len:", len(output)
                     try:
                         upload_fp = cStringIO.StringIO(output)
-                        multipart_upload.upload_part_from_file(upload_fp,
-                            part_num)
+                        multipart_upload.upload_part_from_file(
+                            upload_fp, part_num)
                         bytes_uploaded += bytes_read
                         break
 
@@ -124,16 +129,16 @@ class S3Upload():
                                 for upload in \
                                     self.bucket.get_all_multipart_uploads():
 
-                                    print "  Check multi-part upload: %s"%(upload.key_name)
+                                    print "  Check multi-part upload: %s"%(
+                                        upload.key_name)
 
                                     if (
-                                            (
-                                              object_num == 0 and
-                                              upload.key_name == backup_name
-                                            ) or (
-                                              object_num > 0 and
-                                              upload.key_name == "%s.%02d"%(backup_name,object_num)
-                                            )
+                                            object_num == 0 and
+                                            upload.key_name == backup_name
+                                        ) or (
+                                            object_num > 0 and
+                                            upload.key_name == "%s.%02d"%(
+                                                backup_name, object_num)
                                         ):
                                         print " that's it..."
                                         multipart_upload = upload
@@ -142,7 +147,7 @@ class S3Upload():
                             except socket.error:
 
                                 if (time.time() > (first_fail_time +
-                                    DEFAULT_S3_FAILURE_TIMEOUT)):
+                                                   DEFAULT_S3_FAILURE_TIMEOUT)):
 
                                     raise S3UploadError(
                                         "Error: reached hard fail timeout"
@@ -157,7 +162,8 @@ class S3Upload():
                                 time.sleep(DEFAULT_S3_RETRY_TIMEOUT)
 
         if self.verbose:
-            print "DEBUG: done with upload of", backup_name, "in", object_num+1, "objects"
+            print "DEBUG: done with upload of", backup_name, \
+                "in", object_num+1, "objects"
 
         return_code = process.poll()
 

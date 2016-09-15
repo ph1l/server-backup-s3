@@ -19,7 +19,7 @@
 
 from ServerBackupS3.defaults import DEFAULT_CACHE_DIR
 
-class BackupFilesystem():
+class BackupFilesystem(object):
 
     def __get_cur_level(self):
 
@@ -84,8 +84,8 @@ class BackupFilesystem():
             return False
 
     def __init__(self, source_filesystem, force_full=False, max_level=3,
-        encrypt=False, recipients=None, cache_dir=DEFAULT_CACHE_DIR,
-        verbose=False):
+                 encrypt=False, recipients=None, cache_dir=DEFAULT_CACHE_DIR,
+                 verbose=False):
 
         import os
 
@@ -154,19 +154,24 @@ class BackupFilesystem():
 
         import subprocess
 
-        self.tar_process = subprocess.Popen(self.tar_command,
+        self.tar_process = subprocess.Popen(
+            self.tar_command,
             stdout=subprocess.PIPE)
 
         if self.encrypt:
-            pipe_process = subprocess.Popen( self.gpg_command,
-                stdin=self.tar_process.stdout, stdout=subprocess.PIPE)
+            pipe_process = subprocess.Popen(
+                self.gpg_command,
+                stdin=self.tar_process.stdout,
+                stdout=subprocess.PIPE)
 
         else:
-            self.pipe_process = subprocess.Popen( [ "gzip", "-c" ],
-                stdin=self.tar_process.stdout, stdout=subprocess.PIPE)
+            self.pipe_process = subprocess.Popen(
+                ["gzip", "-c"],
+                stdin=self.tar_process.stdout,
+                stdout=subprocess.PIPE)
 
         self.tar_process.stdout.close()  # Allow tar_process to receive a
-                                    # SIGPIPE if gpg_process exits.
+                                         # SIGPIPE if gpg_process exits.
         return pipe_process
 
     def __gzip_incremental_data(self):
