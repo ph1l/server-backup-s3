@@ -8,5 +8,11 @@ setup(
         'console_scripts': [
             'server-backup-s3 = ServerBackupS3.__main__:main',
         ],
-    }
+    },
+    author = "Philip J Freeman",
+    author_email = "elektron@halo.nu",
+    description = "streaming server backup to s3 using tar listed incremental and optional gnupg (PGP) encryption",
+    license = "GPL3",
+    keywords = "backup tar gpg s3",
+    url = "https://github.com/ph1l/server-backup-s3",
 )
