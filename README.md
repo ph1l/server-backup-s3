@@ -78,4 +78,4 @@ Here's an example crontab for root (`sudo crontab -e`)
     MAILTO=admin@example.com
     PATH=/usr/bin:/bin:/usr/sbin:/sbin
     # m h  dom mon dow   command
-    1 0 1 * * . /etc/server-backup-s3.source && /usr/local/sbin/server-backup-s3 --encrypt --recipient CE4A0BF21E1C237DD8C400FAA39487B22697143F --bucket backups.example.com --region us-west-1
+    1 0 1 * * . /etc/server-backup-s3.source && /usr/local/bin/server-backup-s3 --encrypt --recipient CE4A0BF21E1C237DD8C400FAA39487B22697143F --bucket backups.example.com --region us-west-1
