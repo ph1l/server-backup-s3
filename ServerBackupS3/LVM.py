@@ -30,7 +30,8 @@ class LogicalVolumeSnapshot():
         self.verbose = verbose
 
         lvcreate_cmd = ["lvcreate", "-L"+str(size)+"B", "-s", "-n",
-            self.name, self.volume.group.name + "/" + self.volume.name]
+                        self.name, self.volume.group.name + "/"
+                        + self.volume.name]
 
         lvcreate_process = subprocess.Popen(lvcreate_cmd)
         return_code = lvcreate_process.wait()
@@ -104,8 +105,8 @@ class LogicalVolume():
     def get_size(self):
         import subprocess
 
-        size_cmd = [ "lvs", "--noheadings", "--units", "B",
-            self.group.name + "/" + self.name, "-o", "lv_size" ]
+        size_cmd = ["lvs", "--noheadings", "--units", "B",
+                    self.group.name + "/" + self.name, "-o", "lv_size"]
 
         size_process = subprocess.Popen(size_cmd, stdout=subprocess.PIPE)
         return_code = size_process.wait()
@@ -138,7 +139,7 @@ class LogicalVolume():
         if self.verbose:
             print "DEBUG: generating snapshot", snap_name, "in", self.group.name
         return LogicalVolumeSnapshot(self, snap_name, snap_allocation,
-            verbose=self.verbose)
+                                     verbose=self.verbose)
 
 
 class VolumeGroup():

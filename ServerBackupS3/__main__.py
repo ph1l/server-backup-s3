@@ -171,7 +171,8 @@ def main():
             volume = group.get_volume(logical_volume_name)
 
             # Make a snapshot
-            snapshot = volume.make_snapshot(allocation_pct=args.snapshot_percentage)
+            snapshot = volume.make_snapshot(
+                allocation_pct=args.snapshot_percentage)
 
             # Setup Mountpoint
             mountpoint = args.temp_dir + "/" + volume_group_name + \
