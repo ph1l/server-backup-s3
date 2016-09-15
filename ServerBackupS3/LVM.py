@@ -19,7 +19,7 @@
 
 """
 
-class LogicalVolumeSnapshot():
+class LogicalVolumeSnapshot(object):
 
     def __init__(self, volume, name, size, verbose=False):
         import subprocess
@@ -93,7 +93,7 @@ class LogicalVolumeSnapshot():
             print "DEBUG: Successfully removed", self.name
 
 
-class LogicalVolume():
+class LogicalVolume(object):
     def __init__(self, group, volume_name, verbose=False):
         import re
 
@@ -142,7 +142,7 @@ class LogicalVolume():
                                      verbose=self.verbose)
 
 
-class VolumeGroup():
+class VolumeGroup(object):
     def __init__(self, group_name, verbose=False):
         self.name = group_name
         self.verbose = verbose

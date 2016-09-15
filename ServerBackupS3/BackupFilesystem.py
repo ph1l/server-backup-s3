@@ -19,7 +19,7 @@
 
 from ServerBackupS3.defaults import DEFAULT_CACHE_DIR
 
-class BackupFilesystem():
+class BackupFilesystem(object):
 
     def __get_cur_level(self):
 

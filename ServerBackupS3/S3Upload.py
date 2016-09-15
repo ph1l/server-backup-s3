@@ -28,7 +28,7 @@ class S3UploadError(Exception):
     pass
 
 
-class S3Upload():
+class S3Upload(object):
 
     def __connect_to_bucket(self):
 
