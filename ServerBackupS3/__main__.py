@@ -60,6 +60,7 @@ def main():
 
     argparser.add_argument(
         '-m', '--max-level',
+        type=int,
         default=3,
         help='maximum incremental level',
         )
@@ -197,7 +198,7 @@ def main():
             backup = BackupFilesystem(
                 mountpoint,
                 force_full=args.force_full,
-                max_level=args.max_level,
+                max_level=int(args.max_level),
                 encrypt=args.encrypt,
                 recipients=args.recipient,
                 cache_dir=args.cache_dir,
