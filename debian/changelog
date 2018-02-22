@@ -1,0 +1,5 @@
+server-backup-s3 (1.0.2-1) unstable; urgency=medium
+
+  * Initial release
+
+ -- Philip J Freeman <elektron@halo.nu>  Wed, 21 Feb 2018 15:16:34 -0800
