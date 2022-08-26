@@ -26,7 +26,7 @@ def ensure_cachedir_tag(cache_dir, verbose=False):
 
     if not os.path.exists(cache_dir + "/CACHEDIR.TAG"):
         if verbose:
-            print "DEBUG: creating CACHEDIR.TAG in", cache_dir
+            print("DEBUG: creating CACHEDIR.TAG in", cache_dir)
         with open(cache_dir + "/CACHEDIR.TAG", "w") as cachedir_tag:
             cachedir_tag.write("Signature: 8a477f597d28d172789f06886806bc55\n")
 

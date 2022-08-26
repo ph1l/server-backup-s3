@@ -117,16 +117,16 @@ def main():
 
     # Check arguments
     if args.bucket == None:
-        print "Error: No destination bucket specified."
+        print("Error: No destination bucket specified.")
         sys.exit(2)
 
     if args.region == None:
-        print "Error: No destination regionspecified."
+        print("Error: No destination regionspecified.")
         sys.exit(2)
 
     if args.encrypt:
         if args.recipient == None:
-            print "Error: requested encryption without any recipients."
+            print("Error: requested encryption without any recipients.")
             sys.exit(2)
 
     # Setup Cache Directory
@@ -147,7 +147,7 @@ def main():
         # then get a list of local filesystems
         filesystems = discover_filesystems()
         if args.verbose:
-            print "DEBUG: discovered filesystems:", ", ".join(filesystems)
+            print("DEBUG: discovered filesystems:", ", ".join(filesystems))
         for filesystem in filesystems:
             backup_list.append(("FILESYSTEM", filesystem))
     else:
@@ -205,7 +205,7 @@ def main():
                 verbose=args.verbose
                 )
         except:
-            print "Error: Unexpected exception setting up backup:"
+            print("Error: Unexpected exception setting up backup:")
             traceback.print_exc(file=sys.stdout)
 
         else:
@@ -217,13 +217,13 @@ def main():
                     )
 
             except S3UploadError:
-                print "Error: S3UploadError, failing backup"
+                print("Error: S3UploadError, failing backup")
                 backup.failure()
 
             except:
-                print "Error: Unexpected exception in upload:"
+                print("Error: Unexpected exception in upload:")
                 traceback.print_exc(file=sys.stdout)
-                print "failing backup..."
+                print("failing backup...")
                 backup.failure()
 
             else:
