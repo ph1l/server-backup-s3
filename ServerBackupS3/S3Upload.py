@@ -74,7 +74,7 @@ class S3Upload(object):
             # READ INPUT DATA FROM PIPE
             output = process.stdout.read(CHUNK_SIZE)
 
-            if output == '' and process.poll() is not None:
+            if output == b'' and process.poll() is not None:
                 break
 
             if output:
@@ -107,7 +107,7 @@ class S3Upload(object):
                         print("DEBUG: TRYING UPLOAD CHUNK:", \
                             part_num, " len:", len(output))
                     try:
-                        upload_fp = io.StringIO(output)
+                        upload_fp = io.BytesIO(output)
                         multipart_upload.upload_part_from_file(
                             upload_fp, part_num)
                         bytes_uploaded += bytes_read
