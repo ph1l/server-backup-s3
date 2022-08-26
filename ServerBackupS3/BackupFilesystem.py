@@ -32,9 +32,9 @@ class BackupFilesystem(object):
         except:
             self.curlevel = 0
             if self.verbose:
-                print "DEBUG: Exception getting current level:"
+                print("DEBUG: Exception getting current level:")
                 traceback.print_exc(file=sys.stdout)
-                print "DEBUG: Setting current level to 0"
+                print("DEBUG: Setting current level to 0")
 
     def __gunzip_incremental_data(self):
 
@@ -76,11 +76,11 @@ class BackupFilesystem(object):
         return_code = gpg_process.wait()
         if return_code == 0:
             if verbose:
-                print "DEBUG: encryption to", key_id, "succeeded"
+                print("DEBUG: encryption to", key_id, "succeeded")
             return True
         else:
             if verbose:
-                print "DEBUG: encryption to", key_id, "failed"
+                print("DEBUG: encryption to", key_id, "failed")
             return False
 
     def __init__(self, source_filesystem, force_full=False, max_level=3,
@@ -90,7 +90,7 @@ class BackupFilesystem(object):
         import os
 
         if verbose:
-            print "DEBUG: Backup filesystem:", source_filesystem
+            print("DEBUG: Backup filesystem:", source_filesystem)
 
         self.verbose = verbose
         self.max_level = max_level
@@ -119,7 +119,7 @@ class BackupFilesystem(object):
 
         if encrypt:
             if verbose:
-                print "DEBUG: encrypt to:", ", ".join(recipients)
+                print("DEBUG: encrypt to:", ", ".join(recipients))
 
             self.gpg_command = [
                 "gpg", "--quiet", "--trust-model", "always", "--encrypt"
@@ -131,8 +131,8 @@ class BackupFilesystem(object):
                     self.gpg_command.extend(("--recipient", recipient))
                     num_recipients += 1
                 else:
-                    print "WARNING: Skipping encryption recipient:", \
-                        recipient, "(encryption test failed)"
+                    print("WARNING: Skipping encryption recipient:", \
+                        recipient, "(encryption test failed)")
             if num_recipients < 1:
                 raise Exception(
                     "Encryption requested, but no valid recipients found")
@@ -192,7 +192,7 @@ class BackupFilesystem(object):
 
     def success(self):
         if self.verbose:
-            print "DEBUG: backup completed successfully..."
+            print("DEBUG: backup completed successfully...")
         self.__gzip_incremental_data()
         self.__increment_level()
 
@@ -200,7 +200,7 @@ class BackupFilesystem(object):
 
         import os
 
-        print "Error: backup failed..."
+        print("Error: backup failed...")
         # Terminate tar process
         self.tar_process.terminate()
         # wait for process to stop

@@ -8,11 +8,11 @@ This is a python backup script to do encrypted incremental tar backups to s3
 
 * tar
 * gnupg
-* python
-* python boto
+* python3
+* python3 boto
 
-This utility is tested on Debian Wheeezy, Jessie, and Stretch with the default
-`python-boto` package.
+This utility is tested on Debian Bullseye with the default
+`python3-boto` package.
 
 ## Usage
 
