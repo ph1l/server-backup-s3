@@ -54,8 +54,8 @@ class LogicalVolumeSnapshot(object):
         if return_code != 0:
             raise Exception("Error: command failed")
         elif self.verbose:
-            print "DEBUG: Successfully mounted", self.device, "on", \
-                mountpoint
+            print("DEBUG: Successfully mounted", self.device, "on", \
+                mountpoint)
 
         self.mounted = True
 
@@ -73,7 +73,7 @@ class LogicalVolumeSnapshot(object):
         if return_code != 0:
             raise Exception("Error: command failed")
         elif self.verbose:
-            print "DEBUG: Successfully umounted", self.device
+            print("DEBUG: Successfully umounted", self.device)
 
         self.mounted = False
 
@@ -90,7 +90,7 @@ class LogicalVolumeSnapshot(object):
         if return_code != 0:
             raise Exception("Error: command failed")
         elif self.verbose:
-            print "DEBUG: Successfully removed", self.name
+            print("DEBUG: Successfully removed", self.name)
 
 
 class LogicalVolume(object):
@@ -118,7 +118,7 @@ class LogicalVolume(object):
             raise Exception("Error: parsing command output: "+output)
         size = int(m_number.group(1))
         if self.verbose:
-            print "DEBUG: got LogicalVolume size:", size
+            print("DEBUG: got LogicalVolume size:", size)
         return size
 
     def make_snapshot(self, allocation_pct=100):
@@ -132,12 +132,12 @@ class LogicalVolume(object):
             + (1024*1024*128)                           # add 128MB for overhead
             )
         if self.verbose:
-            print "DEBUG: "+str(allocation_pct)+"% of "+str(lv_size)+ \
-                "B = "+str(snap_allocation)+"B"
+            print("DEBUG: "+str(allocation_pct)+"% of "+str(lv_size)+ \
+                "B = "+str(snap_allocation)+"B")
         snap_name = self.name+".snapshot." + \
             datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
         if self.verbose:
-            print "DEBUG: generating snapshot", snap_name, "in", self.group.name
+            print("DEBUG: generating snapshot", snap_name, "in", self.group.name)
         return LogicalVolumeSnapshot(self, snap_name, snap_allocation,
                                      verbose=self.verbose)
 
