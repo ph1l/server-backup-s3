@@ -6,7 +6,7 @@
 export PYBUILD_NAME=server-backup-s3
 
 %:
-	dh $@ --with python2 --buildsystem=pybuild
+	dh $@ --with python3 --buildsystem=pybuild
 
 
 # If you need to rebuild the Sphinx documentation

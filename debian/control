@@ -2,10 +2,10 @@ Source: server-backup-s3
 Section: admin
 Priority: optional
 Maintainer: Philip J Freeman <elektron@halo.nu>
-Build-Depends: debhelper (>= 10), dh-python, python-all, python-setuptools
+Build-Depends: debhelper (>= 10), dh-python, python3-all, python3-setuptools
 Standards-Version: 4.1.2
 Homepage: https://github.com/ph1l/server-backup-s3
-X-Python-Version: >= 2.6
+X-Python-Version: >= 3.9
 
 Package: server-backup-s3
 Architecture: all
