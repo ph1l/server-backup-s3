@@ -29,7 +29,7 @@ class BackupFilesystem(object):
         try:
             with open(self.curlevel_filename) as level_file:
                 self.curlevel = int(level_file.readline())
-        except:
+        except Exception:
             self.curlevel = 0
             if self.verbose:
                 print("DEBUG: Exception getting current level:")
