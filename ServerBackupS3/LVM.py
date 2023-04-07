@@ -114,7 +114,7 @@ class LogicalVolume(object):
             raise Exception("Error: command failed")
         output = size_process.stdout.read().decode()
         m_number = self.re_number.match(output)
-        if m_number == None:
+        if m_number is None:
             raise Exception("Error: parsing command output: "+output)
         size = int(m_number.group(1))
         if self.verbose:
