@@ -116,16 +116,16 @@ def main():
     args = argparser.parse_args()
 
     # Check arguments
-    if args.bucket == None:
+    if args.bucket is None:
         print("Error: No destination bucket specified.")
         sys.exit(2)
 
-    if args.region == None:
+    if args.region is None:
         print("Error: No destination regionspecified.")
         sys.exit(2)
 
     if args.encrypt:
-        if args.recipient == None:
+        if args.recipient is None:
             print("Error: requested encryption without any recipients.")
             sys.exit(2)
 
@@ -143,7 +143,7 @@ def main():
 
     backup_list = []
     # If no filesystems or logical volumes specified,
-    if args.filesystem == None and args.logical_volume == None:
+    if args.filesystem is None and args.logical_volume is None:
         # then get a list of local filesystems
         filesystems = discover_filesystems()
         if args.verbose:
@@ -152,10 +152,10 @@ def main():
             backup_list.append(("FILESYSTEM", filesystem))
     else:
         # else, build list from args
-        if args.filesystem != None:
+        if args.filesystem is not None:
             for filesystem in args.filesystem:
                 backup_list.append(("FILESYSTEM", filesystem))
-        if args.logical_volume != None:
+        if args.logical_volume is not None:
             for volume in args.logical_volume:
                 backup_list.append(("VOLUME", volume))
 
@@ -204,7 +204,7 @@ def main():
                 cache_dir=args.cache_dir,
                 verbose=args.verbose
                 )
-        except:
+        except Exception:
             print("Error: Unexpected exception setting up backup:")
             traceback.print_exc(file=sys.stdout)
 
@@ -220,7 +220,7 @@ def main():
                 print("Error: S3UploadError, failing backup")
                 backup.failure()
 
-            except:
+            except Exception:
                 print("Error: Unexpected exception in upload:")
                 traceback.print_exc(file=sys.stdout)
                 print("failing backup...")
