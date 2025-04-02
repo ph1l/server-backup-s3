@@ -1,3 +1,9 @@
+server-backup-s3 (1.1.1-1) unstable; urgency=medium
+
+  * fix lv snapshot percentage calculation
+
+ -- Philip J Freeman <elektron@halo.nu>  Tue, 01 Apr 2025 19:48:56 -0700
+
 server-backup-s3 (1.1.0-1) unstable; urgency=medium
 
   * python 2to3 conversion
