@@ -126,7 +126,7 @@ class LogicalVolume(object):
 
         lv_size = self.get_size()
         snap_allocation = (
-            (int(
+            int(int(
                 lv_size * float(allocation_pct/100.0)   # Calculate percentage
             ) / 512) * 512                              # Use a 512B boundry
             + (1024*1024*128)                           # add 128MB for overhead
