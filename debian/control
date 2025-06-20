@@ -9,7 +9,7 @@ X-Python-Version: >= 3.9
 
 Package: server-backup-s3
 Architecture: all
-Depends: ${python3:Depends}, ${misc:Depends}
+Depends: ${python3:Depends}, ${misc:Depends}, tar, gnupg
 Description: incremental backups gnupg (PGP) encrypted and uploaded to s3
  Python script for backing up a linux server to s3. tar listed incremental
  backups gnupg (PGP) encrypted and uploaded to s3 
