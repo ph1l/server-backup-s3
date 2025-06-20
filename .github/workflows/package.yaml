@@ -4,9 +4,11 @@ jobs:
   package:
     strategy:
       matrix:
-        arg: [ { codename: "bookworm", image: "debian:bookworm-slim" },
-               { codename: "focal",    image: "ubuntu:focal"         },
+        arg: [ { codename: "bullseye", image: "debian:bullseye-slim" },
+               { codename: "bookworm", image: "debian:bookworm-slim" },
+               { codename: "trixie",   image: "debian:trixie-slim"   },
                { codename: "jammy",    image: "ubuntu:jammy"         },
+               { codename: "noble",    image: "ubuntu:noble"         },
              ]
     runs-on: ubuntu-latest
     steps:
