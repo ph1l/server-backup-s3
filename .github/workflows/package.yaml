@@ -1,14 +1,21 @@
-name: Build Debian Package
+name: Build Debian Packages
 on: [push]
 jobs:
   package:
-    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        arg: [ { codename: "bookworm", image: "debian:bookworm-slim" },
+               { codename: "focal",    image: "ubuntu:focal"         },
+               { codename: "jammy",    image: "ubuntu:jammy"         },
+             ]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: jtdor/build-deb-action@v1
         with:
+          docker-image: ${{ matrix.arg.image }}
           buildpackage-opts: --build=binary --no-sign
       - uses: actions/upload-artifact@v4
         with:
           path: debian/artifacts/
-          name: debian_package
+          name: debian_package_${{ matrix.arg.codename }}
