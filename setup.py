@@ -2,9 +2,9 @@
 from setuptools import setup, find_packages
 setup(
     name = "ServerBackupS3",
-    version = "1.1.2",
+    version = "1.2.0",
     packages = find_packages(),
-    install_requires = ["boto >= 2.3.0"],
+    install_requires = ["boto3 >= 1.13"],
     entry_points={
         'console_scripts': [
             'server-backup-s3 = ServerBackupS3.__main__:main',
