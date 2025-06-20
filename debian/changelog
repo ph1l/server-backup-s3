@@ -1,3 +1,9 @@
+server-backup-s3 (1.1.2-1) unstable; urgency=medium
+
+  * bump to correct internal python module version
+
+ -- Philip J Freeman <elektron@halo.nu>  Fri, 20 Jun 2025 10:09:04 -0700
+
 server-backup-s3 (1.1.1-1) unstable; urgency=medium
 
   * fix lv snapshot percentage calculation
