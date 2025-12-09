@@ -2,7 +2,7 @@
 from setuptools import setup, find_packages
 setup(
     name = "ServerBackupS3",
-    version = "1.2.0",
+    version = "1.2.1",
     packages = find_packages(),
     install_requires = ["boto3 >= 1.13"],
     entry_points={
