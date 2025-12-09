@@ -1,3 +1,9 @@
+server-backup-s3 (1.2.1-1) unstable; urgency=medium
+
+  * handle s3 multipart uploads of large backups (up to 2.4TB)
+
+ -- Philip J Freeman <elektron@halo.nu>  Mon, 08 Dec 2025 16:10:45 -0800
+
 server-backup-s3 (1.2.0-1) unstable; urgency=medium
 
   * Boto to boto3
