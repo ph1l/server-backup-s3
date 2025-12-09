@@ -39,7 +39,9 @@ class S3Upload(object):
 
     def multipart_from_process(self, backup_name, process, verbose=False):
 
-        self.s3.Object(self.bucket_name, backup_name).upload_fileobj(process.stdout)
+        config = boto3.s3.transfer.TransferConfig(multipart_chunksize=1024 * 1024 * 256)
+
+        self.s3.Object(self.bucket_name, backup_name).upload_fileobj(process.stdout, Config=config)
 
         if self.verbose:
             print("DEBUG: done with upload of", backup_name)
